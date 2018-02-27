@@ -33,6 +33,7 @@ private:
 	FTransform DEBUGGetRandomTransform(FVector Dimensions);
 
 	UPROPERTY(EditAnywhere) int UnitLimit = 1000000;
+	int CoreCount = 4; /// TODO(Thomas): Obtain this programmatically.
 
 	// Spawn area
 	FVector Dimensions = FVector(10000.0f, 10000.0f, 1000.0f);

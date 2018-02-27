@@ -4,6 +4,7 @@
 #include "Runnable.h"
 #include "RunnableThread.h"
 
+// Holds the information of one computation block.
 struct WorkOrder
 {
 	UInstancedStaticMeshComponent* Instances;
@@ -11,6 +12,7 @@ struct WorkOrder
 	uint32 MaxIndex;
 };
 
+// Holds all computation blocks and keeps track of completed ones.
 struct WorkQueue
 {
 	WorkOrder *WorkOrders;
@@ -21,6 +23,7 @@ struct WorkQueue
 
 static bool UpdateTransforms(WorkQueue *Queue);
 
+// Worker Class.
 class FUpdateTransformsWorker : public FRunnable
 {
 public:
@@ -44,13 +47,15 @@ AUnitManager::AUnitManager()
 
 	/// TODO(Thomas): Set as root component? there's some warning floating around in the editor
 	// create new object
-	InstancedStaticMeshComponent = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("HierarchicalInstancedStaticMesh"));
+	InstancedStaticMeshComponent = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("InstancedStaticMeshComponent"));
 	InstancedStaticMeshComponent->SetFlags(RF_Transactional); /// TODO(Thomas): Figure out what this tag is.
 	
 	//InstancedStaticMeshComponent->bSelectable = false; // To be able to select in editor or not. Should only affect editor performance.
 	
 	/// TODO(Thomas): Does order matter?
 	/// Disable collision functionality of unreal engine.
+	/// Basically disabling any tag that seems relevant.
+	/// TODO(Thomas): Further research into these settings.
 	InstancedStaticMeshComponent->bHasPerInstanceHitProxies = false;
 	static FName NoCollision(TEXT("NoCollision"));
 	InstancedStaticMeshComponent->SetCollisionProfileName(NoCollision);
@@ -93,10 +98,12 @@ void AUnitManager::Tick(float DeltaTime)
 
 	int32 InstanceCount = InstancedStaticMeshComponent->GetInstanceCount();
 
-	// correct spawn amount first
+	// DEBUG: correct spawn amount first
 	if (InstanceCount < UnitLimit)
 	{
-		for (int i = 0; i < 50000; i++)
+		int NextBatchCount = FMath::Min(50000, UnitLimit - InstanceCount);
+
+		for (int i = 0; i < NextBatchCount; i++)
 		{
 			InstancedStaticMeshComponent->AddInstance(DEBUGGetRandomTransform(Dimensions));
 		}
@@ -104,17 +111,15 @@ void AUnitManager::Tick(float DeltaTime)
 		int InstanceCount = InstancedStaticMeshComponent->GetInstanceCount();
 		UE_LOG(LogTemp, Warning, TEXT("%d"), InstanceCount);
 
-		return; // not executing more until we've met the spawn count
+		return; // not executing main path until we've met the spawn count
 	}
 
-	int32 CoreCount = 4;
-
-	// Compute work size
-	int32 BlockCount = CoreCount;
+	// Compute work block sizes
+	int32 BlockCount = CoreCount; // Incase we want to further subdivide
 	int32 BlockSize = FMath::DivideAndRoundDown(InstanceCount, BlockCount);
 	
 	WorkQueue Queue = {};
-	Queue.WorkOrders = (WorkOrder *)FMemory::Malloc(BlockCount * sizeof(WorkOrder)); // Might want to subdivide further.
+	Queue.WorkOrders = (WorkOrder *)FMemory::Malloc(BlockCount * sizeof(WorkOrder));
 
 	int BlockStart = 0;
 
@@ -151,6 +156,7 @@ void AUnitManager::Tick(float DeltaTime)
 		Threads[i-1] = FRunnableThread::Create(&Worker, *ThreadName, 0, EThreadPriority::TPri_AboveNormal);
 	}
 
+	// Do our share of work
 	while(UpdateTransforms(&Queue))
 	{}
 
@@ -163,6 +169,7 @@ void AUnitManager::Tick(float DeltaTime)
 	// Mark render state
 	InstancedStaticMeshComponent->MarkRenderStateDirty();
 
+	// Memory Cleanup
 	FMemory::Free(Threads);
 	FMemory::Free(Queue.WorkOrders);
 }
@@ -207,6 +214,7 @@ static bool UpdateTransforms(WorkQueue *Queue)
 		return false;
 	}
 
+	// Fetch our work order
 	WorkOrder *Order = Queue->WorkOrders + WorkOrderIndex;
 
 	// Arbitrarily chosen local transformation to aply.
@@ -224,6 +232,7 @@ static bool UpdateTransforms(WorkQueue *Queue)
 		/// But having issues marking the render state dirty so the change actually shows.
 		Order->Instances->UpdateInstanceTransform(i, newPositionTransform, false, false, true);
 
+		// Old Code
 		//InstancedStaticMeshComponent->PerInstanceSMData[i].Transform = newPosition;
 		//InstancedStaticMeshComponent->MarkRenderStateDirty();
 	}
